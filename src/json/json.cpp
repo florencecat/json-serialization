@@ -8,27 +8,13 @@ namespace json
     JSONWriter::JSONWriter(std::string_view filepath) : _out{filepath.data()}
     {
         if (!_out.is_open())
-        {
-            auto message{std::stringstream() << "Couldn't open file " << filepath};
-            throw std::exception(message.str().c_str());
-        }
-    }
-
-    JSONWriter::~JSONWriter()
-    {
-        _out.close();
+            throw std::runtime_error(std::string("Couldn't open file ") + std::string(filepath));
     }
 
     void JSONWriter::indent()
     {
-        if (const auto count{_indents}; count > 0)
-        {
-            std::stringstream buffer;
-            for (size_t i{0}; i < count; ++i)
-                buffer << "\t";
-
-            _out << buffer.str();
-        }
+        for (size_t i{0}; i < _indents; ++i)
+            _out << '\t';
     }
 
     void JSONWriter::endObject()
@@ -54,6 +40,7 @@ namespace json
         if (itemCount > 0)
             _writer.comma();
         _writer.indent();
+        itemCount++;
     }
 
 #pragma endregion
@@ -63,7 +50,6 @@ namespace json
     JSONWriter::ObjectScope JSONWriter::ArrayScope::element()
     {
         grammar();
-        items(items() + 1);
         return writer().object();
     }
 
@@ -71,34 +57,32 @@ namespace json
 
 #pragma region JSONWriter::ObjectScope
 
-    void JSONWriter::ObjectScope::field(std::string_view key, std::string_view value)
-    {
-        if (key.empty() || value.empty())
-            return;
-
-        grammar();
-        writer().key(key);
-        writer().value(value);
-        items(items() + 1);
-    }
-
-    void JSONWriter::ObjectScope::field(std::string_view key, int value)
+    void JSONWriter::ObjectScope::field(std::string_view key, TypedValue value)
     {
         if (key.empty())
             return;
 
         grammar();
         writer().key(key);
-        writer().value(value);
-        items(items() + 1);
+
+        switch (value.type())
+        {
+            case TypedValue::PropertyType::integer:
+                writer().value(value.asInt());
+                break;
+            case TypedValue::PropertyType::string:
+                writer().value(value.asString());
+                break;
+            default:
+                throw std::runtime_error(std::string("Unexpected TypedValue type"));
+                break;
+        }
     }
 
     JSONWriter::ArrayScope JSONWriter::ObjectScope::array(std::string_view key)
     {
         grammar();
         writer().key(key);
-        items(items() + 1);
-
         return writer().array();
     }
 
@@ -106,9 +90,6 @@ namespace json
     {
         grammar();
         writer().key(key);
-
-        items(items() + 1);
-
         return writer().object();
     }
 

@@ -1,30 +1,35 @@
 #include <json/json.h>
-#include <string_view>
 
 class BasicDescribable : public json::Describable<BasicDescribable>
 {
 public:
-    BasicDescribable() = default;
-    
+    BasicDescribable() 
+    {
+        registerProperty("caption")
+            .getter([](const BasicDescribable* bd) { return json::TypedValue(bd->caption); })
+            .setter([](BasicDescribable* bd, const json::TypedValue& value) { bd->caption = value.asString(); });
+        registerProperty("score")
+            .getter([](const BasicDescribable* bd) { return json::TypedValue(bd->score); })
+            .setter([](BasicDescribable* bd, const json::TypedValue& value) { bd->score = value.asInt(); });
+    }
+
     json::DescribedProperties<BasicDescribable>& description() override
     {
-        registerProperty("score")
-            .getter([](const BasicDescribable* bd) -> std::string_view { return bd->caption; })
-            .setter([](BasicDescribable* bd, const std::string_view& value) { bd->caption = value; });
+
 
         return schema();
     }
 private:
     int score{ 0 };
-    std::string caption { "Название" };
+    std::string caption{ "Название" };
 };
 
 int main(int argc, char* argv[]) 
 {
     BasicDescribable bd;
-    json::JSONWriter reader("text.json");
+    json::JSONWriter writer("text.json");
 
-    auto object { reader.object() };
+    auto object{ writer.object() };
     BasicDescribable::serialize(object, &bd);
 
     return 0;

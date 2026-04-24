@@ -1,15 +1,15 @@
 #include <string_view>
-#include <sstream>
-#include <exception>
-#include <iostream>
+#include <stdexcept>
 #include <fstream>
 #include <vector>
+#include <string>
 
 namespace json
 {
 #pragma region forward-declaration
 
     class JSONWriter;
+    class TypedValue;
 
     template<class ObjectClass>
     struct DescribedProperty;
@@ -35,6 +35,26 @@ namespace json
         End
     };
 
+    class TypedValue
+    {
+    public:
+        enum class PropertyType
+        {
+            integer,
+            string
+        };
+
+        explicit TypedValue(int value) : _type{ PropertyType::integer }, _value{ std::to_string(value) } { }
+        explicit TypedValue(std::string_view value) : _type{ PropertyType::string }, _value{ value } { }
+
+        PropertyType type() const { return _type; }
+        int asInt() const { return std::stoi(_value); }
+        std::string_view asString() const { return _value; }
+    private:
+        PropertyType _type;
+        std::string _value;
+    };
+
 #pragma region JSONWriter
 
     class JSONWriter
@@ -54,8 +74,6 @@ namespace json
 
         protected:
             JSONWriter &writer() const { return _writer; }
-            size_t items() const { return itemCount; }
-            void items(size_t value) { itemCount = value; }
 
         private:
             JSONWriter &_writer;
@@ -70,7 +88,8 @@ namespace json
                 writer.beginArray();
                 writer.increaseIndents();
             }
-            ArrayScope(ArrayScope &scope) = delete;
+            ArrayScope(const ArrayScope&) = delete;
+            ArrayScope& operator=(const ArrayScope&) = delete;
             ~ArrayScope()
             {
                 writer().decreaseIndents();
@@ -88,15 +107,15 @@ namespace json
                 writer.beginObject();
                 writer.increaseIndents();
             }
-            ObjectScope(ObjectScope &scope) = delete;
+            ObjectScope(const ObjectScope&) = delete;
+            ObjectScope& operator=(const ObjectScope&) = delete;
             ~ObjectScope()
             {
                 writer().decreaseIndents();
                 writer().endObject();
             }
 
-            void field(std::string_view key, int value);
-            void field(std::string_view key, std::string_view value);
+            void field(std::string_view key, TypedValue value);
 
             ArrayScope array(std::string_view key);
             ObjectScope object(std::string_view key);
@@ -105,8 +124,7 @@ namespace json
         ObjectScope object() { return ObjectScope(*this); }
         ArrayScope array() { return ArrayScope(*this); }
 
-        JSONWriter(std::string_view filepath);
-        ~JSONWriter();
+        explicit JSONWriter(std::string_view filepath);
 
     private:
         void indent();
@@ -123,13 +141,10 @@ namespace json
 
         void key(std::string_view key) { _out << "\"" << key << "\": "; }
         void value(std::string_view value) { _out << "\"" << value << "\""; }
-        void value(int value) { _out << "\"" << value << "\""; }
+        void value(int value) { _out << value; }
 
-        const std::string_view _filename;
         std::ofstream _out;
         size_t _indents{0};
-
-        const std::string _comma{", "};
     };
 
 #pragma endregion
@@ -141,8 +156,8 @@ namespace json
     {
         DescribedProperty(std::string_view key) : _key{key} {}
 
-        using Getter = std::string_view (*)(const ObjectClass *);
-        using Setter = void (*)(ObjectClass *, const std::string_view &);
+        using Getter = TypedValue (*)(const ObjectClass *);
+        using Setter = void (*)(ObjectClass *, const TypedValue &);
 
         DescribedProperty &getter(Getter f)
         {
@@ -164,10 +179,9 @@ namespace json
     class Describable
     {
     public:
-        explicit Describable() = default;
+        Describable() = default;
         virtual ~Describable() = default;
-        virtual DescribedProperties<ObjectClass> &description() = 0;
-
+        
         static void serialize(JSONWriter::ObjectScope& scope, ObjectClass* object)
         {
             auto& properties{ object->description() };
@@ -175,13 +189,15 @@ namespace json
                 scope.field(property._key, property._getter(object));
         }
     protected:
+        virtual DescribedProperties<ObjectClass> &description() = 0;
+
         DescribedProperty<ObjectClass> &registerProperty(std::string_view key)
         {
-            _properties.emplace_back(std::move(DescribedProperty<ObjectClass>(key)));
-            return _properties[_properties.size() - 1];
+            _properties.emplace_back(key);
+            return _properties.back();
         }
 
-        DescribedProperties<ObjectClass> &schema() { return _properties; };
+        DescribedProperties<ObjectClass> &schema() { return _properties; }
 
     private:
         DescribedProperties<ObjectClass> _properties;
